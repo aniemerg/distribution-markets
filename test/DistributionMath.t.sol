@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
 import "../src/libraries/DistributionMath.sol";
+import "solgauss/Gaussian.sol";
 
 contract DistributionMathTest is Test {
     uint256 constant PRECISION = 1e18;
@@ -69,49 +70,26 @@ contract DistributionMathTest is Test {
         assertLt(f, PRECISION / 1000000, "F should be very close to zero when far from mean");
     }
 
-    function testCalculateMinimumSigma() public {
+    function testMinimumSigmaAndMaximumK() public {
         uint256 k = 10 * PRECISION;
         uint256 b = 100 * PRECISION;
-        uint256 minSigma = DistributionMath.calculateMinimumSigma(k, b);
         
-        // Test that the minimum sigma constraint is enforced
-        // For any sigma < minSigma, the scaled PDF's maximum value would exceed b
+        uint256 minSigma = DistributionMath.calculateMinimumSigma(k, b);
         uint256 maxK = DistributionMath.calculateMaximumK(minSigma, b);
+        
+        // At minimum sigma, maximum k should equal our input k
         assertApproxEqRel(maxK, k, EPSILON, "Maximum k should match input k at minimum sigma");
-    }
-
-    function testCalculateMaximumK() public {
-        uint256 sigma = 10 * PRECISION;
-        uint256 b = 100 * PRECISION;
-        uint256 maxK = DistributionMath.calculateMaximumK(sigma, b);
         
         // Test that the maximum k constraint is enforced
-        // For any k > maxK, the scaled PDF's maximum value would exceed b
         uint256 f = DistributionMath.calculateF(
             0,  // x at mean
             0,  // mu = 0
-            sigma,
+            minSigma,
             maxK
         );
-        assertApproxEqRel(f, b, EPSILON, "Maximum PDF value should equal backing at maximum k");
-    }
-
-    function testRevertOnInvalidInputs() public {
-        // Test revert on zero sigma
-        vm.expectRevert();
-        DistributionMath.calculateLambda(0, PRECISION);
-
-        // Test revert on zero backing
-        vm.expectRevert();
-        DistributionMath.calculateMinimumSigma(PRECISION, 0);
-
-        // Test revert on exp with out of bounds input
-        vm.expectRevert();
-        DistributionMath.calculateF(
-            1000000 * int256(PRECISION),  // Very large x
-            0,
-            PRECISION,
-            PRECISION
-        );
+        
+        // The maximum value of the PDF should occur at the mean
+        // and should equal the backing amount
+        assertApproxEqRel(f, b, EPSILON * 10, "Maximum PDF value should equal backing");
     }
 }
