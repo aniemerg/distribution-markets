@@ -1,97 +1,62 @@
+// DistributionMath.t.sol
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
 import "../src/libraries/DistributionMath.sol";
-import "solstat/Gaussian.sol";
 
 contract DistributionMathTest is Test {
     uint256 constant PRECISION = 1e18;
-    // Allow for 0.1% difference in calculations due to fixed-point arithmetic
-    uint256 constant EPSILON = PRECISION / 1000;  // 0.1%
+    // Allow for 0.1% difference in calculations
+    uint256 constant EPSILON = PRECISION / 1000;
 
     function setUp() public {}
 
     function testCalculateLambda() public {
-        // Test case 1: k = 10, sigma = 10, expected lambda ≈ 59.5391274861
-        uint256 k1 = 10 * PRECISION;
-        uint256 sigma1 = 10 * PRECISION;
-        uint256 expectedLambda1 = 59539127486100000000; // 59.5391274861 * PRECISION
-        uint256 lambda1 = DistributionMath.calculateLambda(sigma1, k1);
-
-        console.log("Lambda1:", lambda1);
-        console.log("Expected Lambda1:", expectedLambda1);
-        assertApproxEqRel(lambda1, expectedLambda1, EPSILON);
+        uint256 k = 100 * PRECISION;
+        uint256 sigma = 10 * PRECISION;
+        uint256 expectedLambda = 595391274861000000000; // 595.391274861 * PRECISION
+        uint256 lambda = DistributionMath.calculateLambda(sigma, k);
+        assertApproxEqRel(lambda, expectedLambda, EPSILON);
     }
 
     function testCalculateF() public {
-        // Test case: x = 100, mu = 100, sigma = 10, k = 1, expected f ≈ 23.75268
-        int256 x = 100 * int256(PRECISION);
+        // Test case 1: x = mu = 100
+        int256 x1 = 100 * int256(PRECISION);
         int256 mu = 100 * int256(PRECISION);
         uint256 sigma = 10 * PRECISION;
         uint256 k = 100 * PRECISION;
-        uint256 expectedF = 23752680000000000000; // 23.75268 * PRECISION
-        
-        // Get all intermediate values
-        (uint256 expTerm, uint256 denominator, uint256 standardPdf, uint256 lambda, uint256 result) = 
-            DistributionMath.calculateFWithDebug(x, mu, sigma, k);
-        
-        console.log("Intermediate values:");
-        console.log("expTerm:", expTerm);
-        console.log("denominator:", denominator);
-        console.log("standardPdf:", standardPdf);
-        console.log("lambda:", lambda);
-        console.log("result:", result);
-        console.log("Expected:", expectedF);
-        
-        assertApproxEqRel(result, expectedF, EPSILON);
+        uint256 expectedF1 = 23752680000000000000; // 23.75268 * PRECISION
+        uint256 result1 = DistributionMath.calculateF(x1, mu, sigma, k);
+        console.log("Test case 1 (x = 100):");
+        console.log("result1:", result1);
+        console.log("expectedF1:", expectedF1);
+        assertApproxEqRel(result1, expectedF1, EPSILON);
+
+        // Test case 2: x = 85
+        int256 x2 = 85 * int256(PRECISION);
+        uint256 expectedF2 = 7711360000000000000; // 7.71136 * PRECISION
+        uint256 result2 = DistributionMath.calculateF(x2, mu, sigma, k);
+        console.log("\nTest case 2 (x = 85):");
+        console.log("result2:", result2);
+        console.log("expectedF2:", expectedF2);
+        assertApproxEqRel(result2, expectedF2, EPSILON);
     }
 
     function testCalculateFZeroWhenFarFromMean() public {
-        // Test that f approaches zero when x is far from the mean
-        int256 x = 1000 * int256(PRECISION);  // Very far from mean
+        int256 x = 1000 * int256(PRECISION);
         int256 mu = 0;
         uint256 sigma = 10 * PRECISION;
-        uint256 k = 1 * PRECISION;
-        
+        uint256 k = 100 * PRECISION;
         uint256 f = DistributionMath.calculateF(x, mu, sigma, k);
-        
         assertLt(f, PRECISION / 1000000, "F should be very close to zero when far from mean");
     }
 
     function testMinimumSigmaAndMaximumK() public {
-        uint256 k = 10 * PRECISION;
+        uint256 k = 100 * PRECISION;
         uint256 b = 100 * PRECISION;
-        
         uint256 minSigma = DistributionMath.calculateMinimumSigma(k, b);
         uint256 maxK = DistributionMath.calculateMaximumK(minSigma, b);
-        
-        console.log("MaxK:", maxK);
-        console.log("Expected K:", k);
         assertApproxEqRel(maxK, k, EPSILON);
-    }
-
-    function testGaussianPDFAtZero() public {
-    int256 z = 0;  // Test at mean
-    int256 pdfAtZero = Gaussian.pdf(z);
-    int256 expected = 398942280401432678;  // ≈ 0.3989 * 1e18
-    assertApproxEqRel(uint256(pdfAtZero), uint256(expected), EPSILON);
-    }
-
-    function testGaussianPDFAtOneStdev() public {
-        int256 z = int256(PRECISION);  // one standard deviation
-        int256 pdfAtOne = Gaussian.pdf(z);
-        int256 expected = 241970724519143274;  // ≈ 0.242 * 1e18
-        assertApproxEqRel(uint256(pdfAtOne), uint256(expected), EPSILON);
-    }
-
-    function testZCalculation() public {
-        int256 x = 100 * int256(PRECISION);
-        int256 mu = 90 * int256(PRECISION);  // Different from x to get non-zero z
-        uint256 sigma = 10 * PRECISION;
-        
-        // z should be (100-90)/10 = 1 scaled by PRECISION
-        int256 z = ((x - mu) * int256(PRECISION)) / int256(sigma);
-        assertEq(z, int256(PRECISION), "z calculation incorrect");
     }
 }

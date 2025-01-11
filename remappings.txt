@@ -1,3 +1,4 @@
 @openzeppelin/=lib/openzeppelin-contracts/
 solgauss/=lib/solgauss/src/
 solady/=lib/solady/
+@prb/math/=lib/prb-math/
