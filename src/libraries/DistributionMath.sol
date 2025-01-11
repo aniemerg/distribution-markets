@@ -2,6 +2,8 @@
 pragma solidity ^0.8.20;
 
 import "solstat/Gaussian.sol";
+// At the top of DistributionMath.sol
+import "forge-std/console.sol";
 
 library DistributionMath {
     // Precision for fixed-point calculations
@@ -84,25 +86,24 @@ library DistributionMath {
         uint256 sigma, 
         uint256 k
     ) public pure returns (uint256 expTerm, uint256 denominator, uint256 standardPdf, uint256 lambda, uint256 result) {
-        // Calculate standardized value z = (x - μ)/σ
-        int256 z = ((x - mu) * int256(PRECISION)) / int256(sigma);
+        // First calculate (x-μ)²/(2σ²)
+        int256 diff = x - mu;  // Already scaled by PRECISION
+        uint256 diffSquared = (uint256(diff >= 0 ? diff : -diff) * uint256(diff >= 0 ? diff : -diff)) / PRECISION; // Scaled by PRECISION
+        uint256 sigmaSquared = (sigma * sigma) / PRECISION;  // Scaled by PRECISION
+        uint256 exponentNumerator = (diffSquared * PRECISION) / (2 * sigmaSquared);  // Scaled by PRECISION
+
+        // Calculate e^(-exponentNumerator)
+        expTerm = exp(-int256(exponentNumerator));  // Scaled by PRECISION
         
-        // Get standardized PDF value using solstat (which uses μ = 0, σ = 1)
-        int256 pdfValue = Gaussian.pdf(z);  // This will give us PDF for standard normal
+        // Calculate 1/(σ√(2π))
+        denominator = (sigma * SQRT_TWO_PI) / PRECISION;  // Scaled by PRECISION
         
-        // Convert to uint for remaining calculations (PDF is always positive)
-        standardPdf = uint256(pdfValue);
-        
-        // Adjust for our sigma (divide by sigma since PDF = (1/σ) * standard_pdf)
-        standardPdf = (standardPdf * PRECISION) / sigma;
+        // Calculate PDF value: (1/(σ√(2π))) * e^(...)
+        standardPdf = (expTerm * PRECISION) / denominator;  // Scaled by PRECISION
         
         // Scale by lambda
         lambda = calculateLambda(sigma, k);
         result = (lambda * standardPdf) / PRECISION;
-        
-        // For debugging, include other values
-        expTerm = 0;  // Not used with solstat
-        denominator = sigma;  // Just for debugging
         
         return (expTerm, denominator, standardPdf, lambda, result);
     }

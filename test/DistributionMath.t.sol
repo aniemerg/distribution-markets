@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
 import "../src/libraries/DistributionMath.sol";
+import "solstat/Gaussian.sol";
 
 contract DistributionMathTest is Test {
     uint256 constant PRECISION = 1e18;
@@ -28,7 +29,7 @@ contract DistributionMathTest is Test {
         int256 x = 100 * int256(PRECISION);
         int256 mu = 100 * int256(PRECISION);
         uint256 sigma = 10 * PRECISION;
-        uint256 k = 1 * PRECISION;
+        uint256 k = 100 * PRECISION;
         uint256 expectedF = 23752680000000000000; // 23.75268 * PRECISION
         
         // Get all intermediate values
@@ -68,5 +69,29 @@ contract DistributionMathTest is Test {
         console.log("MaxK:", maxK);
         console.log("Expected K:", k);
         assertApproxEqRel(maxK, k, EPSILON);
+    }
+
+    function testGaussianPDFAtZero() public {
+    int256 z = 0;  // Test at mean
+    int256 pdfAtZero = Gaussian.pdf(z);
+    int256 expected = 398942280401432678;  // ≈ 0.3989 * 1e18
+    assertApproxEqRel(uint256(pdfAtZero), uint256(expected), EPSILON);
+    }
+
+    function testGaussianPDFAtOneStdev() public {
+        int256 z = int256(PRECISION);  // one standard deviation
+        int256 pdfAtOne = Gaussian.pdf(z);
+        int256 expected = 241970724519143274;  // ≈ 0.242 * 1e18
+        assertApproxEqRel(uint256(pdfAtOne), uint256(expected), EPSILON);
+    }
+
+    function testZCalculation() public {
+        int256 x = 100 * int256(PRECISION);
+        int256 mu = 90 * int256(PRECISION);  // Different from x to get non-zero z
+        uint256 sigma = 10 * PRECISION;
+        
+        // z should be (100-90)/10 = 1 scaled by PRECISION
+        int256 z = ((x - mu) * int256(PRECISION)) / int256(sigma);
+        assertEq(z, int256(PRECISION), "z calculation incorrect");
     }
 }
