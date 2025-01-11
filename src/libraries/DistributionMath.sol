@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "solgauss/Gaussian.sol";
+import "solstat/Gaussian.sol";
 
 library DistributionMath {
     // Precision for fixed-point calculations
@@ -87,27 +87,25 @@ library DistributionMath {
         // Calculate standardized value z = (x - μ)/σ
         int256 z = ((x - mu) * int256(PRECISION)) / int256(sigma);
         
-        // Intermediate calculations with logging
-        uint256 absZ = uint256(z >= 0 ? z : -z);
-        uint256 zSquared = (absZ * absZ) / PRECISION;
-        uint256 zSquaredHalf = zSquared / 2;
+        // Get standardized PDF value using solstat (which uses μ = 0, σ = 1)
+        int256 pdfValue = Gaussian.pdf(z);  // This will give us PDF for standard normal
         
-        // Calculate exp(-z²/2)
-        expTerm = exp(-int256(zSquaredHalf));
+        // Convert to uint for remaining calculations (PDF is always positive)
+        standardPdf = uint256(pdfValue);
         
-        // Calculate 1/(σ√(2π))
-        denominator = (sigma * SQRT_TWO_PI) / PRECISION;
+        // Adjust for our sigma (divide by sigma since PDF = (1/σ) * standard_pdf)
+        standardPdf = (standardPdf * PRECISION) / sigma;
         
-        // Calculate standardPdf = exp(-z²/2)/(σ√(2π)) with extra precision factor
-        standardPdf = (expTerm * PRECISION * PRECISION) / denominator;
-        
-        // Scale by lambda and apply final precision scaling
+        // Scale by lambda
         lambda = calculateLambda(sigma, k);
-        result = (lambda * standardPdf) / (PRECISION * PRECISION);
+        result = (lambda * standardPdf) / PRECISION;
+        
+        // For debugging, include other values
+        expTerm = 0;  // Not used with solstat
+        denominator = sigma;  // Just for debugging
         
         return (expTerm, denominator, standardPdf, lambda, result);
     }
-
     /**
      * @dev Calculate exp(x) for x scaled by PRECISION
      */
