@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "solstat/Gaussian.sol";
 import { SD59x18, sd } from "@prb/math/src/SD59x18.sol";
 import { UD60x18, ud, exp, sqrt } from "@prb/math/src/UD60x18.sol";
 
@@ -58,7 +57,7 @@ library DistributionMath {
         UD60x18 lambda = ud(calculateLambda(sigma, k));
         return lambda.mul(standardPdf).intoUint256();
     }
-    
+
     function calculateMinimumSigma(uint256 k, uint256 b) internal pure returns (uint256) {
         UD60x18 scaledK = ud(k);
         UD60x18 scaledB = ud(b);

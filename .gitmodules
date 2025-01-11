@@ -7,12 +7,6 @@
 [submodule "lib/solgauss"]
 	path = lib/solgauss
 	url = https://github.com/cairoeth/solgauss
-[submodule "lib/solady"]
-	path = lib/solady
-	url = https://github.com/vectorized/solady
-[submodule "lib/solstat"]
-	path = lib/solstat
-	url = https://github.com/primitivefinance/solstat
 [submodule "lib/prb-math"]
 	path = lib/prb-math
 	url = https://github.com/PaulRBerg/prb-math

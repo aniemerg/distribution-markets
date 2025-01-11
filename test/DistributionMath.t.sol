@@ -20,6 +20,7 @@ contract DistributionMathTest is Test {
         assertApproxEqRel(lambda, expectedLambda, EPSILON);
     }
 
+    // https://www.desmos.com/calculator/92vr2lflym
     function testCalculateF() public {
         // Test case 1: x = mu = 100
         int256 x1 = 100 * int256(PRECISION);
