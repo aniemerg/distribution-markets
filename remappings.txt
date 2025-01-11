@@ -1,0 +1,3 @@
+@openzeppelin/=lib/openzeppelin-contracts/
+solady/=lib/solady/src/
+solgauss/=lib/solgauss/src/
