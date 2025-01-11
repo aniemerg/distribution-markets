@@ -21,7 +21,7 @@ library DistributionMath {
         UD60x18 innerTerm = ud(2e18).mul(scaledSigma).mul(ud(SQRT_PI));
         return scaledK.mul(sqrt(innerTerm)).intoUint256();
     }
-    
+        
     function calculateF(
         int256 x, 
         int256 mu, 
@@ -40,8 +40,12 @@ library DistributionMath {
         UD60x18 sigmaSquared = scaledSigma.mul(scaledSigma).div(ud(PRECISION));
         UD60x18 exponentNumerator = diffSquared.div(ud(2e18).mul(sigmaSquared));
         
+        // If exponent is too large, return 0 as the probability is effectively zero
+        if (exponentNumerator.gt(ud(133e18))) {
+            return 0;
+        }
+        
         // Calculate e^(-exponentNumerator)
-        // Note: we use exp(x) where x = -exponentNumerator
         UD60x18 expTerm = exp(ud(0)).div(exp(exponentNumerator));
         
         // Calculate 1/(σ√(2π))
@@ -54,7 +58,7 @@ library DistributionMath {
         UD60x18 lambda = ud(calculateLambda(sigma, k));
         return lambda.mul(standardPdf).intoUint256();
     }
-
+    
     function calculateMinimumSigma(uint256 k, uint256 b) internal pure returns (uint256) {
         UD60x18 scaledK = ud(k);
         UD60x18 scaledB = ud(b);
