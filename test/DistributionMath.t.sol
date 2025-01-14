@@ -60,4 +60,48 @@ contract DistributionMathTest is Test {
         uint256 maxK = DistributionMath.calculateMaximumK(minSigma, b);
         assertApproxEqRel(maxK, k, EPSILON);
     }
+
+    // https://www.desmos.com/calculator/lg3qike3zc
+    function testFindMaximumLossSpecificCase() public {
+        // Parameters (scaled by 1e18)
+        int256 from_mu = 1500000000000000000;    // 1.5
+        uint256 from_sigma = 450000000000000000;  // 0.45
+        int256 to_mu = 1900000000000000000;      // 1.9
+        uint256 to_sigma = 400000000000000000;    // 0.4
+        uint256 k = 2000000000000000000;         // 2.0
+        
+        // Expected results (scaled)
+        int256 expected_x = 2108129000000000000;  // 2.108129
+        uint256 expected_loss = 1175948000000000000;  // 1.175948
+        
+        // Initial hint slightly above to_mu
+        int256 hint = 2000000000000000000;  // 2.0
+        
+        (uint256 maxLoss, int256 xAtMaxLoss) = DistributionMath.findMaximumLossNoScipy(
+            from_mu,
+            from_sigma,
+            to_mu,
+            to_sigma,
+            hint,
+            k,
+            20,  // max iterations
+            1000000000000  // tolerance (1e-6 when scaled)
+        );
+        
+        assertApproxEqRel(
+            uint256(xAtMaxLoss),
+            uint256(expected_x),
+            EPSILON,
+            "x value at maximum loss incorrect"
+        );
+        
+        assertApproxEqRel(
+            maxLoss,
+            expected_loss,
+            EPSILON,
+            "maximum loss value incorrect"
+        );
+    }
+
+
 }
