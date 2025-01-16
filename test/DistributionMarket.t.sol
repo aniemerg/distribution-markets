@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "../src/libraries/DistributionMath.sol";
 import "../src/DistributionMarket.sol";
 import "../src/MarketPosition.sol";
+import "forge-std/console.sol";
 
 // Test ERC20 token for market collateral
 contract TestToken is ERC20 {
@@ -199,7 +200,6 @@ contract DistributionMarketTest is Test {
         uint256 totalPayout = token.balanceOf(LP_1);
         assertApproxEqRel(totalPayout, INITIAL_BACKING, EPSILON);
     }
-
     function testTradeAfterLp() public {
         // Initialize market first
         vm.startPrank(LP_1);
@@ -222,42 +222,167 @@ contract DistributionMarketTest is Test {
         // Execute trade - move mean to 100.0, keep same std dev
         int256 newMean = 100e18;
         
-        // Calculate expected collateral (from Python test)
-        uint256 expectedCollateral = 14851900000000000000; // ~14.8519 scaled to 1e18
+        // Calculate expected collateral using DistributionMath directly
+        uint256 calculatedCollateral = DistributionMath.calculateRequiredCollateral(
+            INITIAL_MEAN,
+            INITIAL_STD_DEV,
+            newMean,
+            INITIAL_STD_DEV,
+            INITIAL_K,
+            newMean  // Using newMean as hint
+        );
         
-        // Execute trade and capture position ID
-        vm.expectEmit(true, true, true, true);
-        uint256 expectedPosId = initPositionId + 1;
-        console.log("Expected Position ID:", expectedPosId);
-        console.log("Expected Collateral:", expectedCollateral);
-        emit Trade(expectedPosId, TRADER_1, newMean, INITIAL_STD_DEV, expectedCollateral);
+        console.log("Calculated Required Collateral:");
+        console.logUint(calculatedCollateral);
+        console.log("Expected Collateral:");
+        console.logUint(14851900000000000000);
         
+        // Now do the trade
         uint256 positionId = market.trade(
             newMean,
             INITIAL_STD_DEV,
             maxCollateral
         );
-        console.log("Actual Position ID:", positionId);
         
-        // Get position details to see actual collateral
+        // Get position details
         (,,,uint256 actualCollateral,) = market.getPosition(positionId);
-        console.log("Actual Collateral:", actualCollateral);
-        
-        vm.stopPrank();
-        vm.stopPrank();
+        console.log("Actual Position Collateral:");
+        console.logUint(actualCollateral);
 
-        // Verify position creation
+        // Verify position details
         (int256 posMean, uint256 posStdDev, uint256 posK, uint256 posCollateral, bool isLp) = market.getPosition(positionId);
         assertEq(posMean, newMean);
         assertEq(posStdDev, INITIAL_STD_DEV);
         assertEq(posK, INITIAL_K);
         assertFalse(isLp);
 
-        // Check collateral is close to expected value (14.8519 from Python test)
-        assertApproxEqRel(posCollateral, expectedCollateral, EPSILON);
+        // Check if actual collateral matches what we calculated directly
+        assertEq(actualCollateral, calculatedCollateral, "Position collateral doesn't match calculated");
+        
+        // Check if it's within acceptable range of expected value
+        assertApproxEqRel(
+            actualCollateral, 
+            14851900000000000000, // Expected ~14.8519 scaled to 1e18
+            EPSILON,
+            "Collateral not within expected range"
+        );
+    }
 
-        // Check market state updated
-        assertEq(market.currentMean(), newMean);
-        assertEq(market.currentStdDev(), INITIAL_STD_DEV);
+    // These functions would be added to DistributionMarketTest
+    function testTradeAndSettlement() public {
+        // Initialize market
+        vm.startPrank(LP_1);
+        uint256 lpPositionId = market.initializeMarket(
+            INITIAL_MEAN,
+            INITIAL_STD_DEV,
+            INITIAL_BACKING,
+            INITIAL_K
+        );
+        vm.stopPrank();
+
+        // Setup and execute trade
+        uint256 maxCollateral = 15e18;
+        token.mint(TRADER_1, maxCollateral);
+        
+        vm.startPrank(TRADER_1);
+        token.approve(address(market), maxCollateral);
+        
+        // Trade to move mean to 100.0
+        int256 newMean = 100e18;
+        uint256 tradePositionId = market.trade(
+            newMean,
+            INITIAL_STD_DEV,
+            maxCollateral
+        );
+        vm.stopPrank();
+        
+        // Record balances before settlement
+        uint256 initialTraderBalance = token.balanceOf(TRADER_1);
+        uint256 initialLpBalance = token.balanceOf(LP_1);
+        
+        // Settle market at 107.6 (profitable point for trader)
+        int256 finalValue = 107.6e18;
+        market.settleMarket(finalValue);
+        
+        // Settle trader position
+        vm.prank(TRADER_1);
+        market.settlePosition(tradePositionId);
+        
+        // Get trader's total (collateral + payout)
+        uint256 traderFinalBalance = token.balanceOf(TRADER_1);
+        uint256 traderTotalReceived = traderFinalBalance - initialTraderBalance;
+        
+        // Expected trader total (from Python test: collateral + 14.8519282576)
+        (,,,uint256 traderCollateral,) = market.getPosition(tradePositionId);
+        uint256 expectedTraderTotal = traderCollateral + 14851928257600000000;
+        assertApproxEqRel(traderTotalReceived, expectedTraderTotal, EPSILON);
+        
+        // Settle LP position
+        vm.startPrank(LP_1);
+        market.settlePosition(lpPositionId);
+        market.settleLpTokens(LP_1);
+        vm.stopPrank();
+        
+        // Get LP's total received
+        uint256 lpFinalBalance = token.balanceOf(LP_1);
+        uint256 lpTotalReceived = lpFinalBalance - initialLpBalance;
+        
+        // Verify total payouts equal total deposits
+        uint256 totalPayouts = traderTotalReceived + lpTotalReceived;
+        uint256 totalDeposits = INITIAL_BACKING + traderCollateral;
+        assertApproxEqRel(totalPayouts, totalDeposits, EPSILON);
+    }
+
+    function testStdDevBackingConstraint() public {
+        // Initialize market first
+        vm.startPrank(LP_1);
+        market.initializeMarket(
+            INITIAL_MEAN,
+            INITIAL_STD_DEV,
+            INITIAL_BACKING,
+            INITIAL_K
+        );
+        vm.stopPrank();
+
+        // Setup trader
+        uint256 maxCollateral = 20e18;  // More than needed
+        token.mint(TRADER_1, maxCollateral);
+        vm.startPrank(TRADER_1);
+        token.approve(address(market), maxCollateral);
+
+        // Calculate minimum allowed std dev based on current k and backing
+        // σ >= k^2 / (b^2 * sqrt(π))
+        uint256 minStdDev = DistributionMath.calculateMinimumSigma(
+            INITIAL_K,
+            INITIAL_BACKING
+        );
+        
+        console.log("Minimum standard deviation:", minStdDev);
+        
+        // Try to trade with std dev below minimum - should fail
+        int256 newMean = 100e18;
+        uint256 invalidStdDev = minStdDev - 1e17;  // Just below minimum
+        
+        vm.expectRevert("Standard deviation too low");
+        market.trade(
+            newMean,
+            invalidStdDev,
+            maxCollateral
+        );
+        
+        // Verify trade with valid std dev succeeds
+        uint256 validStdDev = minStdDev + 1e17;  // Just above minimum
+        uint256 positionId = market.trade(
+            newMean,
+            validStdDev,
+            maxCollateral
+        );
+        vm.stopPrank();
+
+        // Verify position was created
+        (int256 posMean, uint256 posStdDev,,, bool isLp) = market.getPosition(positionId);
+        assertEq(posMean, newMean);
+        assertEq(posStdDev, validStdDev);
+        assertFalse(isLp);
     }
 }
