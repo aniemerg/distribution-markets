@@ -59,6 +59,8 @@ contract DistributionMarketTest is Test {
         uint256 newStdDev,
         uint256 collateral
     );
+
+    error ERC20InsufficientBalance(address sender, uint256 balance, uint256 needed);
     
     function setUp() public {
         // Deploy test token
@@ -351,13 +353,13 @@ contract DistributionMarketTest is Test {
         token.approve(address(market), maxCollateral);
 
         // Calculate minimum allowed std dev based on current k and backing
-        // σ >= k^2 / (b^2 * sqrt(π))
         uint256 minStdDev = DistributionMath.calculateMinimumSigma(
             INITIAL_K,
             INITIAL_BACKING
         );
         
-        console.log("Minimum standard deviation:", minStdDev);
+        console.log("Minimum standard deviation:");
+        console.logUint(minStdDev);
         
         // Try to trade with std dev below minimum - should fail
         int256 newMean = 100e18;
@@ -384,5 +386,173 @@ contract DistributionMarketTest is Test {
         assertEq(posMean, newMean);
         assertEq(posStdDev, validStdDev);
         assertFalse(isLp);
+    }
+
+    function testInitializeAndAddLiquidity() public {
+        // Initial setup and market initialization
+        vm.startPrank(LP_1);
+        uint256 initialPositionId = market.initializeMarket(
+            INITIAL_MEAN,
+            INITIAL_STD_DEV,
+            INITIAL_BACKING,
+            INITIAL_K
+        );
+        vm.stopPrank();
+
+        // Record state after initialization
+        uint256 initialK = market.currentK();
+        uint256 initialTotalBacking = market.totalBacking();
+        uint256 initialLPTokens = market.totalSupply();
+        
+        console.log("Initial K:");
+        console.logUint(initialK);
+        
+        // Setup second LP
+        address LP_2 = address(0x2);
+        uint256 additionalBacking = 25e18;  // Half of initial backing
+        token.mint(LP_2, additionalBacking);
+        
+        vm.startPrank(LP_2);
+        token.approve(address(market), additionalBacking);
+        
+        // Add liquidity from second LP
+        uint256 newPositionId = market.addLiquidity(additionalBacking);
+        vm.stopPrank();
+        
+        uint256 newK = market.currentK();
+        console.log("New K:");
+        console.logUint(newK);
+        
+        // Calculate expected K
+        uint256 expectedNewK = (initialK * (initialTotalBacking + additionalBacking)) / initialTotalBacking;
+        console.log("Expected New K:");
+        console.logUint(expectedNewK);
+        
+        // Test market state after additional liquidity
+        assertEq(market.totalBacking(), initialTotalBacking + additionalBacking);
+        assertApproxEqRel(
+            market.currentK(),
+            expectedNewK,
+            EPSILON,
+            "K value mismatch"
+        );
+        
+        // Rest of the test remains the same...
+    }
+
+    function testTradeWithLiquidityAddition() public {
+        // Initialize market
+        vm.startPrank(LP_1);
+        market.initializeMarket(
+            INITIAL_MEAN,
+            INITIAL_STD_DEV,
+            INITIAL_BACKING,
+            INITIAL_K
+        );
+        vm.stopPrank();
+        
+        // Setup and execute trader position
+        uint256 traderCollateral = 15e18;
+        token.mint(TRADER_1, traderCollateral);
+        
+        vm.startPrank(TRADER_1);
+        token.approve(address(market), traderCollateral);
+        
+        // Move mean up to 100.0
+        int256 newMean = 100e18;
+        uint256 traderPositionId = market.trade(
+            newMean,
+            INITIAL_STD_DEV,
+            traderCollateral
+        );
+        vm.stopPrank();
+        
+        // Record required collateral and market state before additional liquidity
+        (,,,uint256 requiredCollateral,) = market.getPosition(traderPositionId);
+        uint256 kBeforeLiquidity = market.currentK();
+        
+        // Add additional liquidity
+        uint256 additionalBacking = 25e18;
+        token.mint(LP_2, additionalBacking);
+        
+        vm.startPrank(LP_2);
+        token.approve(address(market), additionalBacking);
+        market.addLiquidity(additionalBacking);
+        vm.stopPrank();
+        
+        // Verify k increased
+        assertTrue(market.currentK() > kBeforeLiquidity);
+        
+        // Settle market at a profitable point for trader
+        int256 finalValue = 107.6e18;
+        market.settleMarket(finalValue);
+        
+        // Record initial balance
+        uint256 initialTraderBalance = token.balanceOf(TRADER_1);
+        
+        // Settle trader position
+        vm.prank(TRADER_1);
+        market.settlePosition(traderPositionId);
+        
+        // Calculate trader's total (payout + initial collateral)
+        uint256 traderPayout = token.balanceOf(TRADER_1) - initialTraderBalance;
+        
+        // Expected total from previous test
+        uint256 expectedTotal = requiredCollateral + 14851928257600000000;  // ~14.8519 from earlier test
+        assertApproxEqRel(traderPayout, expectedTotal, EPSILON);
+    }
+
+    function testAddLiquidityInsufficientFunds() public {
+        // Initialize market
+        vm.startPrank(LP_1);
+        market.initializeMarket(
+            INITIAL_MEAN,
+            INITIAL_STD_DEV,
+            INITIAL_BACKING,
+            INITIAL_K
+        );
+        vm.stopPrank();
+        
+        // Try to add liquidity without sufficient funds
+        address LP_2 = address(0x2);
+        uint256 backingAmount = 25e18;
+        
+        vm.startPrank(LP_2);
+        token.approve(address(market), backingAmount);
+        // Don't mint tokens to LP_2
+        
+        vm.expectRevert(abi.encodeWithSelector(
+            ERC20InsufficientBalance.selector,
+            LP_2,  // sender
+            0,     // balance
+            backingAmount  // needed
+        ));
+        market.addLiquidity(backingAmount);
+        vm.stopPrank();
+    }
+    function testAddLiquidityToSettledMarket() public {
+        // Initialize market
+        vm.startPrank(LP_1);
+        market.initializeMarket(
+            INITIAL_MEAN,
+            INITIAL_STD_DEV,
+            INITIAL_BACKING,
+            INITIAL_K
+        );
+        vm.stopPrank();
+        
+        // Settle market
+        market.settleMarket(95e18);
+        
+        // Try to add liquidity to settled market
+        uint256 backingAmount = 25e18;
+        token.mint(LP_2, backingAmount);
+        
+        vm.startPrank(LP_2);
+        token.approve(address(market), backingAmount);
+        
+        vm.expectRevert("Market already settled");
+        market.addLiquidity(backingAmount);
+        vm.stopPrank();
     }
 }

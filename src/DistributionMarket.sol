@@ -124,6 +124,47 @@ contract DistributionMarket is ERC20, IDistributionMarket {
         return positionId;
     }
 
+    function addLiquidity(uint256 backingAmount) external returns (uint256) {
+        require(initialized, "Market not initialized");
+        require(!settled, "Market already settled");
+        
+        // Transfer backing to market
+        require(token.transferFrom(msg.sender, address(this), backingAmount), 
+                "Token transfer failed");
+        
+        // Calculate new k based on backing ratio
+        uint256 oldBacking = totalBacking;
+        totalBacking += backingAmount;
+        uint256 oldK = currentK;
+        // new k = old k * (new backing / old backing)
+        currentK = (oldK * totalBacking) / oldBacking;
+        
+        // Mint LP tokens proportional to backing share
+        // new LP tokens = total LP supply * (new backing / old backing)
+        uint256 newLpTokens = (totalSupply() * backingAmount) / oldBacking;
+        _mint(msg.sender, newLpTokens);
+        
+        // Create position NFT
+        uint256 positionId = positionNFT.mint(msg.sender);
+        
+        // Create trader position at current market position
+        uint256 newK = currentK - oldK;
+        positions[positionId] = Position({
+            mean: currentMean,
+            stdDev: currentStdDev,
+            k: newK,
+            collateral: backingAmount,
+            isLp: true,
+            oldMean: 0,
+            oldStdDev: 0,
+            settled: false
+        });
+        
+        emit LiquidityAdded(positionId, msg.sender, backingAmount);
+        
+        return positionId;
+    }
+
     function getPosition(uint256 positionId) external view returns (
         int256 mean,
         uint256 stdDev,

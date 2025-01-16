@@ -35,4 +35,10 @@ interface IDistributionMarket {
         uint256 newStdDev,
         uint256 collateral
     );
+
+    event LiquidityAdded(
+        uint256 indexed positionId,
+        address indexed lpProvider,
+        uint256 backingAmount
+    );
 }
