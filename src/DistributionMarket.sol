@@ -72,6 +72,58 @@ contract DistributionMarket is ERC20, IDistributionMarket {
         return positionId;
     }
 
+    function trade(
+        int256 newMean,
+        uint256 newStdDev,
+        uint256 maxCollateral
+    ) external returns (uint256) {
+        require(initialized, "Market not initialized");
+        require(!settled, "Market already settled");
+        
+        // Calculate minimum allowed std dev and verify
+        uint256 minStdDev = DistributionMath.calculateMinimumSigma(currentK, totalBacking);
+        require(newStdDev >= minStdDev, "Standard deviation too low");
+
+        // Calculate required collateral
+        uint256 requiredCollateral = DistributionMath.calculateRequiredCollateral(
+            currentMean,
+            currentStdDev,
+            newMean,
+            newStdDev,
+            currentK,
+            newMean  // Using newMean as hint for calculation
+        );
+
+        require(requiredCollateral <= maxCollateral, "Insufficient collateral");
+        
+        // Transfer collateral to market
+        require(token.transferFrom(msg.sender, address(this), requiredCollateral),
+                "Token transfer failed");
+
+        // Create position NFT
+        uint256 positionId = positionNFT.mint(msg.sender);
+        
+        // Store position data
+        positions[positionId] = Position({
+            mean: newMean,
+            stdDev: newStdDev,
+            k: currentK,
+            collateral: requiredCollateral,
+            isLp: false,
+            oldMean: currentMean,
+            oldStdDev: currentStdDev,
+            settled: false
+        });
+        
+        // Update market state
+        currentMean = newMean;
+        currentStdDev = newStdDev;
+        
+        emit Trade(positionId, msg.sender, newMean, newStdDev, requiredCollateral);
+        
+        return positionId;
+    }
+
     function getPosition(uint256 positionId) external view returns (
         int256 mean,
         uint256 stdDev,

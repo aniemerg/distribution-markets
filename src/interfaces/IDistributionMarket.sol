@@ -27,4 +27,12 @@ interface IDistributionMarket {
         uint256 indexed positionId,
         uint256 payout
     );
+
+    event Trade(
+        uint256 indexed positionId,
+        address indexed trader,
+        int256 newMean,
+        uint256 newStdDev,
+        uint256 collateral
+    );
 }
